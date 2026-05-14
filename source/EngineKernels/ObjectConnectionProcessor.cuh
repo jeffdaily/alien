@@ -610,6 +610,13 @@ ObjectConnectionProcessor::calcLargestGapReferenceAndActualAngle(SimulationData&
 
 __inline__ __device__ void ObjectConnectionProcessor::scheduleOperationOnCell(SimulationData& data, Object* object, int operationIndex)
 {
+    // Ensure that the prior plain stores to the operation's fields (type, data, nextOperationIndex = -1)
+    // are visible to other SMs before this operation is published into the chain via atomicCAS below.
+    // Without this fence, another thread that finds this operation while traversing a cell's chain
+    // could observe a stale nextOperationIndex (left over from a previous timestep) and fail to link
+    // its own operation, leading to a one-sided DelConnection (only A->B scheduled, not B->A) and thus
+    // an inconsistent connection state after cudaNextTimestep_structuralOperations_substep4.
+    __threadfence();
     auto origOperationIndex = atomicCAS(&object->scheduledOperationIndex, -1, operationIndex);
     for (int depth = 0; depth < MaxOperationsPerCell; ++depth) {
         if (origOperationIndex == -1) {
