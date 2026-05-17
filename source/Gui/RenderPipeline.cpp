@@ -232,7 +232,7 @@ namespace
     }
 }
 
-void _RenderPipeline::execute()
+void _RenderPipeline::execute(RenderTarget const& finalTarget)
 {
     // Copy vertex buffer from Cuda to OpenGL
     _SimulationFacade::get()->tryCopyBuffersFromCudaToOpenGL(_geometryBuffers, Viewport::get().getVisibleWorldRect());
@@ -243,6 +243,7 @@ void _RenderPipeline::execute()
     auto simParameters = std::make_shared<SimulationParameters>(_SimulationFacade::get()->getSimulationParameters());
     int currentTextureTargetIndex = 0;
     forEachStep(
+        finalTarget,
         [this, &currentTextureTargetIndex] {
             if (currentTextureTargetIndex < _textureTargets.size()) {
                 return _textureTargets.at(currentTextureTargetIndex++);
@@ -305,6 +306,7 @@ void _RenderPipeline::resizeTarget(TextureTarget const& target)
 }
 
 void _RenderPipeline::forEachStep(
+    RenderTarget const& finalTarget,
     std::function<TextureTarget()> const& getTextureTarget,
     std::function<void(RenderStep&, std::vector<unsigned> const&, RenderTarget const&)> const& executeStep)
 {
@@ -326,13 +328,15 @@ void _RenderPipeline::forEachStep(
                     auto& step = sequence._steps.at(l);
 
                     // Determine target
-                    auto target = determineRenderTarget(step, sequence, block, i, j, k, l, isLastBlock, getTextureTarget, previousTargets, usedTargets);
+                    auto target =
+                        determineRenderTarget(step, sequence, block, i, j, k, l, isLastBlock, finalTarget, getTextureTarget, previousTargets, usedTargets);
 
                     // Execute render step
                     executeStep(step, getTextures(previousTargets), target);
 
                     // Current output is input for next step
-                    previousTargets = {target};
+                    previousTargets.clear();
+                    previousTargets.emplace_back(target);
                 }
             }
             CHECK(previousTargets.size() == 1);
@@ -366,6 +370,7 @@ RenderTarget _RenderPipeline::determineRenderTarget(
     size_t repetitionIndex,
     size_t stepIndex,
     bool isLastBlock,
+    RenderTarget const& finalTarget,
     std::function<TextureTarget()> const& getTextureTarget,
     std::vector<RenderTarget> const& previousTargets,
     std::map<RenderTarget, TargetInfo>& usedTargets)
@@ -382,7 +387,7 @@ RenderTarget _RenderPipeline::determineRenderTarget(
         }
     } else {
         if (!subsequentStepsHaveTarget(sequence, stepIndex) && isLastBlock) {
-            target = RenderTarget(ScreenTarget());
+            target = finalTarget;
         } else {
 
             auto reuseTarget = false;

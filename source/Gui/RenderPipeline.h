@@ -45,12 +45,13 @@ public:
     _RenderPipeline(RenderBlocks&& blocks);
 
     void resize(IntVector2D const& size);
-    void execute();
+    void execute(RenderTarget const& finalTarget = ScreenTarget());
 
 private:
     void resizeTarget(TextureTarget const& target);
 
     void forEachStep(
+        RenderTarget const& finalTarget,
         std::function<TextureTarget()> const& getTextureTarget,
         std::function<void(RenderStep& step, std::vector<unsigned int> const& textures, RenderTarget const& target)> const& executeStep);
 
@@ -68,6 +69,7 @@ private:
         size_t repetitionIndex,
         size_t stepIndex,
         bool isLastBlock,
+        RenderTarget const& finalTarget,
         std::function<TextureTarget()> const& getTextureTarget,
         std::vector<RenderTarget> const& previousTargets,
         std::map<RenderTarget, TargetInfo>& usedTargets);

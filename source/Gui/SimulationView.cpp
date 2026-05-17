@@ -194,55 +194,48 @@ void SimulationView::savePicture(std::filesystem::path const& filename, float pi
     viewport.setViewSize(pictureSize);
     viewport.setZoomFactor(pixelPerWorldUnit);
 
-    // Create offscreen framebuffer that captures the final output of the render pipeline (which writes
-    // to the framebuffer that is bound when execute() is called).
     GLint origFbo = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &origFbo);
 
-    GLuint captureTexture = 0;
-    GLuint captureFbo = 0;
-    GLuint captureDepth = 0;
-    glGenTextures(1, &captureTexture);
-    glBindTexture(GL_TEXTURE_2D, captureTexture);
+    auto captureTarget = _TextureTarget::create();
+    captureTarget->initialized = true;
+    glGenTextures(1, &captureTarget->texture);
+    glBindTexture(GL_TEXTURE_2D, captureTarget->texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pictureSize.x, pictureSize.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-    glGenRenderbuffers(1, &captureDepth);
-    glBindRenderbuffer(GL_RENDERBUFFER, captureDepth);
+    glGenRenderbuffers(1, &captureTarget->depthBuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, captureTarget->depthBuffer);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, pictureSize.x, pictureSize.y);
 
-    glGenFramebuffers(1, &captureFbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, captureFbo);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, captureTexture, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, captureDepth);
+    glGenFramebuffers(1, &captureTarget->fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, captureTarget->fbo);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, captureTarget->texture, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, captureTarget->depthBuffer);
 
     bool fboComplete = (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     std::vector<unsigned char> pixels;
     bool success = false;
     if (fboComplete) {
-        // Resize render pipeline so its intermediate texture targets match the new picture size.
         _renderPipeline->resize(pictureSize);
+        _renderPipeline->execute(captureTarget);
 
-        // Render through the standard pipeline. The bound `captureFbo` will be used as the "screen" target.
-        _renderPipeline->execute();
-
-        // Read back the pixels from the capture framebuffer.
-        glBindFramebuffer(GL_FRAMEBUFFER, captureFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, captureTarget->fbo);
         pixels.resize(static_cast<size_t>(pictureSize.x) * pictureSize.y * 4);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
         glReadPixels(0, 0, pictureSize.x, pictureSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
         success = true;
     }
 
-    // Restore the original framebuffer binding and clean up the capture resources.
     glBindFramebuffer(GL_FRAMEBUFFER, origFbo);
-    glDeleteFramebuffers(1, &captureFbo);
-    glDeleteRenderbuffers(1, &captureDepth);
-    glDeleteTextures(1, &captureTexture);
+    glDeleteFramebuffers(1, &captureTarget->fbo);
+    glDeleteRenderbuffers(1, &captureTarget->depthBuffer);
+    glDeleteTextures(1, &captureTarget->texture);
 
     // Restore the viewport and render pipeline to their previous size.
     viewport.setViewSize(origViewSize);
