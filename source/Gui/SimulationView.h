@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <filesystem>
 
 #include <Base/Definitions.h>
 #include <Base/Singleton.h>
@@ -38,6 +39,8 @@ public:
     void setMotionBlur(float value);
 
     void updateMotionBlur();
+
+    void savePicture(std::filesystem::path const& filename, float pixelPerWorldUnit);
 
     static auto constexpr DefaultBrightness = 1.0f;
     static auto constexpr DefaultContrast = 1.0f;

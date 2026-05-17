@@ -1,10 +1,15 @@
 #include "SimulationView.h"
 
 #include <algorithm>
+#include <stdexcept>
+#include <vector>
 
 #include <glad/glad.h>
 
 #include <imgui.h>
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 
 #include <Base/GlobalSettings.h>
 #include <Base/Resources.h>
@@ -165,6 +170,95 @@ void SimulationView::setMotionBlur(float value)
 }
 
 void SimulationView::updateMotionBlur() {}
+
+void SimulationView::savePicture(std::filesystem::path const& filename, float pixelPerWorldUnit)
+{
+    auto& viewport = Viewport::get();
+
+    // Determine the visible world rect (unchanged during this operation) and the resulting picture size.
+    auto worldRect = viewport.getVisibleWorldRect();
+    auto rectWidth = worldRect.bottomRight.x - worldRect.topLeft.x;
+    auto rectHeight = worldRect.bottomRight.y - worldRect.topLeft.y;
+
+    IntVector2D pictureSize{
+        std::max(1, toInt(rectWidth * pixelPerWorldUnit)),
+        std::max(1, toInt(rectHeight * pixelPerWorldUnit)),
+    };
+
+    // Save current viewport state so it can be restored later. The visible world rect is preserved by
+    // using a temporary zoom of `pixelPerWorldUnit` together with a view size of `pictureSize` (because
+    // the visible world rect width/height equals viewSize / zoomFactor).
+    auto origViewSize = viewport.getViewSize();
+    auto origZoomFactor = viewport.getZoomFactor();
+
+    viewport.setViewSize(pictureSize);
+    viewport.setZoomFactor(pixelPerWorldUnit);
+
+    // Create offscreen framebuffer that captures the final output of the render pipeline (which writes
+    // to the framebuffer that is bound when execute() is called).
+    GLint origFbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &origFbo);
+
+    GLuint captureTexture = 0;
+    GLuint captureFbo = 0;
+    GLuint captureDepth = 0;
+    glGenTextures(1, &captureTexture);
+    glBindTexture(GL_TEXTURE_2D, captureTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pictureSize.x, pictureSize.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    glGenRenderbuffers(1, &captureDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, captureDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, pictureSize.x, pictureSize.y);
+
+    glGenFramebuffers(1, &captureFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, captureFbo);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, captureTexture, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, captureDepth);
+
+    bool fboComplete = (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    std::vector<unsigned char> pixels;
+    bool success = false;
+    if (fboComplete) {
+        // Resize render pipeline so its intermediate texture targets match the new picture size.
+        _renderPipeline->resize(pictureSize);
+
+        // Render through the standard pipeline. The bound `captureFbo` will be used as the "screen" target.
+        _renderPipeline->execute();
+
+        // Read back the pixels from the capture framebuffer.
+        glBindFramebuffer(GL_FRAMEBUFFER, captureFbo);
+        pixels.resize(static_cast<size_t>(pictureSize.x) * pictureSize.y * 4);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, pictureSize.x, pictureSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        success = true;
+    }
+
+    // Restore the original framebuffer binding and clean up the capture resources.
+    glBindFramebuffer(GL_FRAMEBUFFER, origFbo);
+    glDeleteFramebuffers(1, &captureFbo);
+    glDeleteRenderbuffers(1, &captureDepth);
+    glDeleteTextures(1, &captureTexture);
+
+    // Restore the viewport and render pipeline to their previous size.
+    viewport.setViewSize(origViewSize);
+    viewport.setZoomFactor(origZoomFactor);
+    _renderPipeline->resize(origViewSize);
+
+    if (!success) {
+        throw std::runtime_error("Could not create offscreen framebuffer for picture capture.");
+    }
+
+    // OpenGL returns pixels bottom-up; flip the rows so the PNG appears in the expected orientation.
+    stbi_flip_vertically_on_write(1);
+    if (!stbi_write_png(filename.string().c_str(), pictureSize.x, pictureSize.y, 4, pixels.data(), pictureSize.x * 4)) {
+        throw std::runtime_error("Could not write PNG file: " + filename.string());
+    }
+}
 
 void SimulationView::setupRenderPipeline()
 {
