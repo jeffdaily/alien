@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <array>
+
 #include <EngineTestData/DescTestDataFactory.h>
 
 #include <PersisterInterface/SerializerService.h>
@@ -30,6 +32,44 @@ protected:
     DescTestDataFactory* _descTestDataFactory;
     SerializerService* _serializerService;
 };
+
+namespace
+{
+    std::string decodeBase64(std::string const& input)
+    {
+        std::array<int, 256> reverseLookup;
+        reverseLookup.fill(-1);
+        for (auto i = 0; i < 26; ++i) {
+            reverseLookup['A' + i] = i;
+            reverseLookup['a' + i] = i + 26;
+        }
+        for (auto i = 0; i < 10; ++i) {
+            reverseLookup['0' + i] = i + 52;
+        }
+        reverseLookup[static_cast<unsigned char>('+')] = 62;
+        reverseLookup[static_cast<unsigned char>('/')] = 63;
+
+        std::string result;
+        int buffer = 0;
+        int bits = -8;
+        for (auto const ch : input) {
+            if (ch == '=') {
+                break;
+            }
+            auto const value = reverseLookup[static_cast<unsigned char>(ch)];
+            if (value < 0) {
+                continue;
+            }
+            buffer = (buffer << 6) | value;
+            bits += 6;
+            if (bits >= 0) {
+                result.push_back(static_cast<char>((buffer >> bits) & 0xFF));
+                bits -= 8;
+            }
+        }
+        return result;
+    }
+}
 
 TEST_F(SerializerServiceTests, singleEnergyParticle)
 {
@@ -85,4 +125,29 @@ TEST_P(SerializerServiceTests_AllNodeTypes, objectWithNonEmptyGenome)
     auto data = Desc().addCreature({ObjectDesc()}, creature, genome);
 
     testSerializationAndDeserialization(data);
+}
+
+TEST_F(SerializerServiceTests, deserializeLegacyGeneConstructorProperties)
+{
+    auto constexpr LegacyMainDataBase64 =
+        "H4sIAAAAAAAAA+1TuwrCQBC8y8MHgmihWGphoWDQwlr8CuugUQsLCTZa+Vv+nXfJjg7HoSB2OrAkO7s3u+EmuqlKzJNpMp2kh+M+TWZzIVWkntAmAhOhiTpxBd4TjaoQYGJ5BtRlubbNQ2ewXaQi+SHbpesz2scko6TLjspFX6NQpYZy3nUR03tEdYyPRDjgxRUVsdMpzXfZCR01E8PA+V7s4cogD6kvFPmbFHVETT2aaxdXHliRjokWcgdadFq+wx+iW2xavvfd4o8SHXm6l17g4QjN3vN502c9+CXPtuy7y993jB8lXvpuhSJuM6ZOe+PWR8WVux7aeCTbKAADmIc7WR45O24Jnh3H4zUd9AkDXxMagecf6KsH7hcWmR99BwAAH4sIAAAAAAAAAwMAAAAAAAAAAAA=";
+
+    SerializedSimulation serializedSimulation;
+    ASSERT_TRUE(_serializerService->serializeSimulationToStrings(serializedSimulation, DeserializedSimulation{}));
+    serializedSimulation.mainData = decodeBase64(LegacyMainDataBase64);
+
+    DeserializedSimulation deserializedSimulation;
+    ASSERT_TRUE(_serializerService->deserializeSimulationFromStrings(deserializedSimulation, serializedSimulation));
+
+    auto const& constructor = deserializedSimulation.mainData._genomes.at(0)._genes.at(1)._nodes.at(0)._constructor.value();
+    EXPECT_TRUE(constructor._separation);
+    EXPECT_EQ(4, constructor._numBranches);
+    EXPECT_EQ(6, constructor._numConcatenations);
+
+    SerializedSimulation rewrittenSimulation;
+    ASSERT_TRUE(_serializerService->serializeSimulationToStrings(rewrittenSimulation, deserializedSimulation));
+
+    DeserializedSimulation reloadedSimulation;
+    ASSERT_TRUE(_serializerService->deserializeSimulationFromStrings(reloadedSimulation, rewrittenSimulation));
+    EXPECT_TRUE(_descTestDataFactory->compare(deserializedSimulation.mainData, reloadedSimulation.mainData));
 }

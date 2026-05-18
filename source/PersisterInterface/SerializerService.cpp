@@ -51,6 +51,151 @@ namespace
         Load,
         Save
     };
+
+    struct LegacyGeneConstructorProperties
+    {
+        std::optional<bool> separation;
+        std::optional<int> numBranches;
+        std::optional<int> numConcatenations;
+
+        bool hasValue() const
+        {
+            return separation.has_value() || numBranches.has_value() || numConcatenations.has_value();
+        }
+    };
+
+    struct LegacyGeneDeserializationContext
+    {
+        std::vector<std::vector<std::optional<LegacyGeneConstructorProperties>>> genomeProperties;
+    };
+
+    thread_local LegacyGeneDeserializationContext* currentLegacyGeneDeserializationContext = nullptr;
+    thread_local std::optional<size_t> currentLegacyGeneGenomeIndex = std::nullopt;
+
+    class LegacyGeneGenomeScope
+    {
+    public:
+        explicit LegacyGeneGenomeScope(SerializationTask task)
+            : _previousGenomeIndex(currentLegacyGeneGenomeIndex)
+        {
+            if (task == SerializationTask::Load && currentLegacyGeneDeserializationContext) {
+                currentLegacyGeneDeserializationContext->genomeProperties.emplace_back();
+                currentLegacyGeneGenomeIndex = currentLegacyGeneDeserializationContext->genomeProperties.size() - 1;
+                _active = true;
+            }
+        }
+
+        ~LegacyGeneGenomeScope()
+        {
+            if (_active) {
+                currentLegacyGeneGenomeIndex = _previousGenomeIndex;
+            }
+        }
+
+    private:
+        bool _active = false;
+        std::optional<size_t> _previousGenomeIndex;
+    };
+
+    class LegacyGeneDeserializationScope
+    {
+    public:
+        explicit LegacyGeneDeserializationScope(LegacyGeneDeserializationContext& context)
+            : _previousContext(currentLegacyGeneDeserializationContext)
+            , _previousGenomeIndex(currentLegacyGeneGenomeIndex)
+        {
+            currentLegacyGeneDeserializationContext = &context;
+            currentLegacyGeneGenomeIndex = std::nullopt;
+        }
+
+        ~LegacyGeneDeserializationScope()
+        {
+            currentLegacyGeneDeserializationContext = _previousContext;
+            currentLegacyGeneGenomeIndex = _previousGenomeIndex;
+        }
+
+    private:
+        LegacyGeneDeserializationContext* _previousContext = nullptr;
+        std::optional<size_t> _previousGenomeIndex;
+    };
+
+    template <typename Constructor>
+    void applyLegacyGeneConstructorProperties(Constructor& constructor, std::optional<LegacyGeneConstructorProperties> const& legacyProperties)
+    {
+        if (!legacyProperties) {
+            return;
+        }
+        if (legacyProperties->separation) {
+            constructor._separation = *legacyProperties->separation;
+        }
+        if (legacyProperties->numBranches) {
+            constructor._numBranches = *legacyProperties->numBranches;
+        }
+        if (legacyProperties->numConcatenations) {
+            constructor._numConcatenations = *legacyProperties->numConcatenations;
+        }
+    }
+
+    template <typename Constructor>
+    void applyLegacyGeneConstructorProperties(
+        Constructor& constructor,
+        std::vector<std::optional<LegacyGeneConstructorProperties>> const* legacyGeneProperties)
+    {
+        if (!legacyGeneProperties || constructor._geneIndex < 0) {
+            return;
+        }
+        auto const geneIndex = static_cast<size_t>(constructor._geneIndex);
+        if (geneIndex >= legacyGeneProperties->size()) {
+            return;
+        }
+        applyLegacyGeneConstructorProperties(constructor, legacyGeneProperties->at(geneIndex));
+    }
+
+    void migrateLegacyGeneConstructorProperties(Desc& description, LegacyGeneDeserializationContext const& legacyContext)
+    {
+        if (legacyContext.genomeProperties.empty()) {
+            return;
+        }
+
+        std::unordered_map<uint64_t, std::vector<std::optional<LegacyGeneConstructorProperties>> const*> legacyGenomePropertiesById;
+        auto const numGenomes = std::min(description._genomes.size(), legacyContext.genomeProperties.size());
+        legacyGenomePropertiesById.reserve(numGenomes);
+        for (size_t genomeIndex = 0; genomeIndex < numGenomes; ++genomeIndex) {
+            auto const& genome = description._genomes.at(genomeIndex);
+            auto const& legacyGenomeProperties = legacyContext.genomeProperties.at(genomeIndex);
+            for (auto& gene : description._genomes.at(genomeIndex)._genes) {
+                for (auto& node : gene._nodes) {
+                    if (node._constructor) {
+                        applyLegacyGeneConstructorProperties(*node._constructor, &legacyGenomeProperties);
+                    }
+                }
+            }
+            legacyGenomePropertiesById.emplace(genome._id, &legacyGenomeProperties);
+        }
+
+        std::unordered_map<uint64_t, std::vector<std::optional<LegacyGeneConstructorProperties>> const*> legacyGenomePropertiesByCreatureId;
+        legacyGenomePropertiesByCreatureId.reserve(description._creatures.size());
+        for (auto const& creature : description._creatures) {
+            auto const genomeIt = legacyGenomePropertiesById.find(creature._genomeId);
+            if (genomeIt != legacyGenomePropertiesById.end()) {
+                legacyGenomePropertiesByCreatureId.emplace(creature._id, genomeIt->second);
+            }
+        }
+
+        for (auto& object : description._objects) {
+            if (object.getObjectType() != ObjectType_Cell) {
+                continue;
+            }
+            auto& cell = object.getCellRef();
+            if (!cell._constructor) {
+                continue;
+            }
+            auto const creatureIt = legacyGenomePropertiesByCreatureId.find(cell._creatureId);
+            if (creatureIt != legacyGenomePropertiesByCreatureId.end()) {
+                applyLegacyGeneConstructorProperties(*cell._constructor, creatureIt->second);
+            }
+        }
+    }
 }
 
 namespace cereal
@@ -182,6 +327,19 @@ namespace cereal
         }
 
         template <typename T>
+        std::optional<T> getOptionalMember(int key) const
+        {
+            if (_task != SerializationTask::Load) {
+                return std::nullopt;
+            }
+            auto const findResult = _attributeMap.find(key);
+            if (findResult == _attributeMap.end()) {
+                return std::nullopt;
+            }
+            return std::get<T>(findResult->second);
+        }
+
+        template <typename T>
         void addDesc(int key, T& value)
         {
             if (_task == SerializationTask::Save) {
@@ -299,6 +457,9 @@ namespace
 
     auto constexpr Id_Gene_Name = 0;
     auto constexpr Id_Gene_Shape = 1;
+    auto constexpr Id_Gene_Legacy_Separation = 2;
+    auto constexpr Id_Gene_Legacy_NumBranches = 3;
+    auto constexpr Id_Gene_Legacy_NumConcatenations = 4;
     auto constexpr Id_Gene_Stiffness = 5;
     auto constexpr Id_Gene_ConnectionDistance = 6;
 
@@ -853,6 +1014,14 @@ namespace cereal
         scope.addMember(Id_Gene_Stiffness, data._stiffness, defaultObject._stiffness);
         scope.addMember(Id_Gene_ConnectionDistance, data._connectionDistance, defaultObject._connectionDistance);
         scope.addDesc(Id_Gene_Nodes, data._nodes);
+        if (task == SerializationTask::Load && currentLegacyGeneDeserializationContext && currentLegacyGeneGenomeIndex) {
+            LegacyGeneConstructorProperties legacyProperties{
+                .separation = scope.template getOptionalMember<bool>(Id_Gene_Legacy_Separation),
+                .numBranches = scope.template getOptionalMember<int>(Id_Gene_Legacy_NumBranches),
+                .numConcatenations = scope.template getOptionalMember<int>(Id_Gene_Legacy_NumConcatenations)};
+            currentLegacyGeneDeserializationContext->genomeProperties.at(*currentLegacyGeneGenomeIndex)
+                .emplace_back(legacyProperties.hasValue() ? std::make_optional(legacyProperties) : std::nullopt);
+        }
     }
     SPLIT_SERIALIZATION(GeneDesc)
 
@@ -896,6 +1065,7 @@ namespace cereal
     void loadSave(SerializationTask task, Archive& ar, GenomeDesc& data)
     {
         GenomeDesc defaultObject;
+        LegacyGeneGenomeScope legacyGeneGenomeScope(task);
         auto scope = getSerializationScope(task, ar);
         scope.addMember(Id_Genome_Id, data._id, defaultObject._id);
         scope.addMember(Id_Genome_Name, data._name, defaultObject._name);
@@ -2022,7 +2192,10 @@ void SerializerService::deserializeDescription(Desc& description, std::istream& 
     if (VersionParserService::get().isVersionOutdated(version)) {
         throw std::runtime_error("Version not supported.");
     }
+    LegacyGeneDeserializationContext legacyGeneDeserializationContext;
+    LegacyGeneDeserializationScope legacyGeneDeserializationScope(legacyGeneDeserializationContext);
     archive(description);
+    migrateLegacyGeneConstructorProperties(description, legacyGeneDeserializationContext);
 }
 
 void SerializerService::serializeSettings(SettingsForSerialization const& settings, std::ostream& stream) const
