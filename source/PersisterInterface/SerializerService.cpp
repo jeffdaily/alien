@@ -58,10 +58,7 @@ namespace
         std::optional<int> numBranches;
         std::optional<int> numConcatenations;
 
-        bool hasValue() const
-        {
-            return separation.has_value() || numBranches.has_value() || numConcatenations.has_value();
-        }
+        bool hasValue() const { return separation.has_value() || numBranches.has_value() || numConcatenations.has_value(); }
     };
 
     struct LegacyGeneDeserializationContext
@@ -137,9 +134,7 @@ namespace
     }
 
     template <typename Constructor>
-    void applyLegacyGeneConstructorProperties(
-        Constructor& constructor,
-        std::vector<std::optional<LegacyGeneConstructorProperties>> const* legacyGeneProperties)
+    void applyLegacyGeneConstructorProperties(Constructor& constructor, std::vector<std::optional<LegacyGeneConstructorProperties>> const* legacyGeneProperties)
     {
         if (!legacyGeneProperties || constructor._geneIndex < 0) {
             return;
