@@ -130,10 +130,9 @@ TEST_P(SerializerServiceTests_AllNodeTypes, objectWithNonEmptyGenome)
 TEST_F(SerializerServiceTests, deserializeLegacyGeneConstructorProperties)
 {
     auto constexpr LegacyMainDataBase64 =
-        "H4sIAAAAAAAAA+1TuwrCQBC8y8MHiGihWGphoWDQwlr8C9ugUQsLURux8bf8O++SHR2OQ0HsdGBJdnZvdsNNdF0VmCbjZDxKd/"
-        "ttmkymQqpIPaFNBCZCE1XicrwnamUhwMTyDKjLck2bh85gu0hJ8l22"
-        "SZdntA9JRkmXHXUUfY1CmRqKeddZTO8R1TE+EuGAF1dUxE6n9LDJTuiomOgHzvdiD1cGeUh9ocjfpKgjaurQXLu48sCKtEw0kDvQotPwHf4Q7XzT4r3rFn+UaMnTvfQcD0do9p7Pmz7rwS+HbM2+u/"
-        "x9x/hR4qXvFo8irjOmVnvl1kj5nbsmWnk0mygAPbiHO1keOVtuDp4tx+M1HfQJA18TGoDnP+irB+4+EYh9fgcAAB+LCAAAAAAAAAMDAAAAAAAAAAAA";
+        "H4sIAAAAAAAAA+1VPYvCQBTczcepjWihCDZaWCgYtLCW+xe2QaMWKSTYHNeI/8p/527yRodlPeG8zht4ZN+8t/M27ITopqqwSGbJbJrmh32azBdCqkjdoU0EJkITDeJKPCf6NSHAxPIMqMtybZuHzmB7"
+        "kA/J82yXrr/QPiEZJV121Fn0NQo1aqjmnZYxrSOqY3xEwprfhuo41jEtdtkRHXUTo8B5ZZZiIA+pLxT5ixR1RE09mmvPrjywIh0TLeQOtOi0fJt/iW550mo9cItvSnTk6V56iZsjND6HR/YMaJfPhvBO"
+        "kW3Zg9//HmS8KfGjB1e3Iq4zplZ75dZI5Z27Jtp4NNsoAEO4hztZHjlb7hM8W47Ha9roEwb+TGgM/tEP4eUNV7CPD8aNBwAAH4sIAAAAAAAAAwMAAAAAAAAAAAA=";
 
     SerializedSimulation serializedSimulation;
     ASSERT_TRUE(_serializerService->serializeSimulationToStrings(serializedSimulation, DeserializedSimulation{}));

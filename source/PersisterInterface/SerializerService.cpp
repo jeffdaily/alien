@@ -331,7 +331,37 @@ namespace cereal
             if (findResult == _attributeMap.end()) {
                 return std::nullopt;
             }
-            return std::get<T>(findResult->second);
+            auto const& variantData = findResult->second;
+            if (auto value = std::get_if<T>(&variantData)) {
+                return *value;
+            }
+            if constexpr (std::is_same_v<T, bool>) {
+                if (auto value = std::get_if<int>(&variantData)) {
+                    return *value != 0;
+                }
+                if (auto value = std::get_if<uint64_t>(&variantData)) {
+                    return *value != 0;
+                }
+                if (auto value = std::get_if<uint32_t>(&variantData)) {
+                    return *value != 0;
+                }
+                if (auto value = std::get_if<uint16_t>(&variantData)) {
+                    return *value != 0;
+                }
+                if (auto value = std::get_if<uint8_t>(&variantData)) {
+                    return *value != 0;
+                }
+                if (auto value = std::get_if<int64_t>(&variantData)) {
+                    return *value != 0;
+                }
+                if (auto value = std::get_if<int16_t>(&variantData)) {
+                    return *value != 0;
+                }
+                if (auto value = std::get_if<int8_t>(&variantData)) {
+                    return *value != 0;
+                }
+            }
+            return std::nullopt;
         }
 
         template <typename T>
