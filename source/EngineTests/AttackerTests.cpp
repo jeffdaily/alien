@@ -197,6 +197,27 @@ TEST_F(AttackerTests, foodChainColorMatrix_zeroStrength)
     EXPECT_TRUE(approxCompare(origTarget.getCellRef()._usableEnergy, actualTarget.getCellRef()._usableEnergy));
 }
 
+TEST_F(AttackerTests, foodChainColorMatrix_partialStrengthCanFullyDrainAndGainEnergy)
+{
+    _parameters.attackerFoodChainColorMatrix.baseValue[0][1] = 0.5f;
+    _parameters.attackerStrength.value[0] = 1.0f;
+    _simulationFacade->setSimulationParameters(_parameters);
+
+    auto data = createAttacker({100.0f, 100.0f}, {100.0f, 103.0f}, 2, 0.0f, 0);
+    data.add(createTargetCreature({100.0f, 103.0f}, 2, 1), false);
+
+    _simulationFacade->setSimulationData(data);
+    _simulationFacade->calcTimesteps(TIMESTEPS_PER_CELL_FUNCTION);
+
+    auto actualData = _simulationFacade->getSimulationData();
+    auto actualAttacker = actualData.getObjectRef(1);
+    auto actualTarget = actualData.getObjectRef(100);
+
+    EXPECT_TRUE(actualTarget.getCellRef()._usableEnergy < NEAR_ZERO);
+    EXPECT_TRUE(actualAttacker.getCellRef()._rawEnergy > NEAR_ZERO);
+    EXPECT_TRUE(actualAttacker.getCellRef()._signal._channels[Channels::AttackerSuccess] > NEAR_ZERO);
+}
+
 TEST_F(AttackerTests, outputSignal_noTarget)
 {
     auto data = createAttacker({100.0f, 100.0f}, {100.0f, 103.0f}, 999);  // Sensor targets non-existent creature

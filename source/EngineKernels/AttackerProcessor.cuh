@@ -159,7 +159,7 @@ __device__ __inline__ void AttackerProcessor::processCell(SimulationData& data, 
 
                         // Absorb energy from attacked cell
                         auto origEnergy = atomicAdd(&otherFreeCell->energy, -energyToTransfer);
-                        if (origEnergy > energyToTransfer) {
+                        if (origEnergy >= energyToTransfer) {
                             sumEnergyToTransfer += energyToTransfer;
                         }
 
@@ -279,7 +279,7 @@ __inline__ __device__ float AttackerProcessor::absorbEnergy(float* energy, float
         return 0.0f;
     }
     auto origEnergy = atomicAdd(energy, -energyToTransfer);
-    if (origEnergy > energyToTransfer) {
+    if (origEnergy >= energyToTransfer) {
         return energyToTransfer;
     }
 
