@@ -99,10 +99,10 @@ void ImageToPatternDialog::show()
                     getMatchedCellColor(ImColor(r, g, b, 255), customizationColors, matchedCellColor, matchedCellIntensity);
                     dataDesc._objects.emplace_back(ObjectDesc()
                                                        .id(NumberGenerator::get().createEntityId())
-                                                       .pos({(toFloat(x) + xOffset) * 1, toFloat(y) * 1})
+                                                       .pos({toFloat(x) + xOffset, toFloat(y)})
                                                        .color(matchedCellColor)
                                                        .fixed(false)
-                                                       .type(FluidDesc()));
+                                                       .type(SolidDesc()));
                 }
             }
         }
