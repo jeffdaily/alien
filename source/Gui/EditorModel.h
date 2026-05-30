@@ -25,7 +25,7 @@ public:
 
     bool existsInspectedEntity(uint64_t id) const;
     ExtendedObjectOrEnergyDesc getInspectedEntity(uint64_t id) const;
-    void addInspectedEntity(ExtendedObjectOrEnergyDesc const& entity);
+    void updateInspectedEntity(ExtendedObjectOrEnergyDesc const& entity);
     void setInspectedEntities(std::vector<ExtendedObjectOrEnergyDesc> const& inspectedEntities);
     bool areEntitiesInspected() const;
 

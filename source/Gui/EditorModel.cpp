@@ -45,7 +45,7 @@ ExtendedObjectOrEnergyDesc EditorModel::getInspectedEntity(uint64_t id) const
     return _inspectedEntityById.at(id);
 }
 
-void EditorModel::addInspectedEntity(ExtendedObjectOrEnergyDesc const& entity)
+void EditorModel::updateInspectedEntity(ExtendedObjectOrEnergyDesc const& entity)
 {
     _inspectedEntityById.insert_or_assign(DescEditService::get().getId(entity), entity);
 }

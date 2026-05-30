@@ -246,7 +246,7 @@ void _InspectionWindow::process()
         if (isObject()) {
             auto extendedObject = std::get<ExtendedObjectDesc>(entity);
             processObject(extendedObject);
-            EditorModel::get().addInspectedEntity(extendedObject);
+            EditorModel::get().updateInspectedEntity(extendedObject);
         } else {
             processParticle(std::get<EnergyDesc>(entity));
         }

@@ -177,7 +177,7 @@ bool EditorController::onInspectObjects(std::vector<ExtendedObjectOrEnergyDesc> 
 
     for (auto const& entity : newEntities) {
         auto id = DescEditService::get().getId(entity);
-        EditorModel::get().addInspectedEntity(entity);
+        EditorModel::get().updateInspectedEntity(entity);
         auto entityPos = Viewport::get().mapWorldToViewPosition(DescEditService::get().getPos(entity), borderlessRendering);
         auto windowPosX = (entityPos.x - center.x) * factorX + center.x;
         auto windowPosY = (entityPos.y - center.y) * factorY + center.y;
